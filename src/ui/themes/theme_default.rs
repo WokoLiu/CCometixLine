@@ -35,7 +35,11 @@ pub fn directory_segment() -> SegmentConfig {
             background: None,
         },
         styles: TextStyleConfig::default(),
-        options: HashMap::new(),
+        options: {
+            let mut opts = HashMap::new();
+            opts.insert("path_depth".to_string(), serde_json::Value::Number(3.into()));
+            opts
+        },
     }
 }
 

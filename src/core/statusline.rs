@@ -473,7 +473,13 @@ pub fn collect_all_segments(
                 segment.collect(input)
             }
             crate::config::SegmentId::Directory => {
-                let segment = DirectorySegment::new();
+                let path_depth = segment_config
+                    .options
+                    .get("path_depth")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize)
+                    .unwrap_or(1);
+                let segment = DirectorySegment::new().with_path_depth(path_depth);
                 segment.collect(input)
             }
             crate::config::SegmentId::Git => {
