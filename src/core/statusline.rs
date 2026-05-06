@@ -31,14 +31,28 @@ fn visible_width(text: &str) -> usize {
 
 pub struct StatusLineGenerator {
     config: Config,
+    max_width: Option<usize>,
 }
 
 impl StatusLineGenerator {
     pub fn new(config: Config) -> Self {
-        Self { config }
+        Self {
+            config,
+            max_width: None,
+        }
+    }
+
+    pub fn with_max_width(mut self, width: usize) -> Self {
+        self.max_width = Some(width);
+        self
     }
 
     pub fn generate(&self, segments: Vec<(SegmentConfig, SegmentData)>) -> String {
+        if self.max_width.is_some() {
+            let lines = self.generate_lines(segments);
+            return lines.join("\n");
+        }
+
         let mut output = Vec::new();
         let enabled_segments: Vec<_> = segments
             .into_iter()
@@ -63,6 +77,107 @@ impl StatusLineGenerator {
             // For all other separators, use white color and simple join
             self.join_with_white_separators(&output)
         }
+    }
+
+    /// Generate wrapped lines of segments respecting max_width.
+    fn generate_lines(
+        &self,
+        segments: Vec<(SegmentConfig, SegmentData)>,
+    ) -> Vec<String> {
+        let max_w = self.max_width.unwrap_or(0);
+        if max_w == 0 {
+            return vec![self.generate(segments)];
+        }
+
+        let enabled_segments: Vec<_> = segments
+            .into_iter()
+            .filter(|(config, _)| config.enabled)
+            .collect();
+
+        if enabled_segments.is_empty() {
+            return vec![String::new()];
+        }
+
+        // Render each segment individually
+        let mut rendered_segments = Vec::new();
+        let mut segment_configs = Vec::new();
+
+        for (config, data) in &enabled_segments {
+            let rendered = self.render_segment(config, data);
+            if !rendered.is_empty() {
+                rendered_segments.push(rendered);
+                segment_configs.push(config.clone());
+            }
+        }
+
+        if rendered_segments.is_empty() {
+            return vec![String::new()];
+        }
+
+        // Pre-calculate separators between segments
+        let mut separators = Vec::new();
+        for i in 0..rendered_segments.len().saturating_sub(1) {
+            let separator = if self.config.style.separator == "\u{e0b0}" {
+                let prev_bg = segment_configs
+                    .get(i)
+                    .and_then(|config| config.colors.background.as_ref());
+                let curr_bg = segment_configs
+                    .get(i + 1)
+                    .and_then(|config| config.colors.background.as_ref());
+                self.create_powerline_arrow(prev_bg, curr_bg)
+            } else {
+                format!("\x1b[37m{}\x1b[0m", self.config.style.separator)
+            };
+            separators.push(separator);
+        }
+
+        // Wrap into lines
+        let mut lines: Vec<String> = Vec::new();
+        let mut current_line = String::new();
+        let mut current_width = 0usize;
+
+        for i in 0..rendered_segments.len() {
+            let segment = &rendered_segments[i];
+            let segment_width = visible_width(segment);
+
+            if current_width > 0 && current_width + segment_width > max_w {
+                lines.push(current_line.clone());
+                current_line.clear();
+                current_width = 0;
+            }
+
+            current_line.push_str(segment);
+            current_width += segment_width;
+
+            if i < separators.len() {
+                let separator = &separators[i];
+                let separator_width = visible_width(separator);
+
+                if i + 1 < rendered_segments.len() {
+                    let next_segment = &rendered_segments[i + 1];
+                    let next_width = visible_width(next_segment);
+
+                    if current_width + separator_width + next_width <= max_w {
+                        current_line.push_str(separator);
+                        current_width += separator_width;
+                    } else {
+                        lines.push(current_line.clone());
+                        current_line.clear();
+                        current_width = 0;
+                    }
+                }
+            }
+        }
+
+        if !current_line.is_empty() {
+            lines.push(current_line);
+        }
+
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+
+        lines
     }
 
     /// Generate statusline for TUI preview with proper width calculation

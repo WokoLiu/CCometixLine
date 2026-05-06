@@ -67,8 +67,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Collect segment data
     let segments_data = collect_all_segments(&config, &input);
 
-    // Render statusline
-    let generator = StatusLineGenerator::new(config);
+    // Determine terminal width for wrapping
+    let term_width = crossterm::terminal::size()
+        .map(|(w, _)| w as usize)
+        .unwrap_or(80);
+    // Reserve some space for Claude Code's own UI elements on the status bar
+    let max_width = term_width.saturating_sub(4).max(40);
+
+    // Render statusline with wrapping
+    let generator = StatusLineGenerator::new(config).with_max_width(max_width);
     let statusline = generator.generate(segments_data);
 
     println!("{}", statusline);
